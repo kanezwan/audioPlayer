@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+*.swp
+
+# Xcode
+*.xcuserstate
+*.xccheckout
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Build
+DerivedData/
+build/
+
+# Superpowers local
+.superpowers/
+
+# Generated temp
+generated-images/
+
+# self
+.gitignore
