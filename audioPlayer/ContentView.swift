@@ -26,7 +26,7 @@ struct ContentView: View {
         }
         .environment(viewModel)
         .frame(minWidth: 800, minHeight: 500)
-        .background(SplitViewInitializer(sidebarWidth: 200))
+        .background(SplitViewInitializer(sidebarWidth: 240))
     }
 }
 

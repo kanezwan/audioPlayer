@@ -32,6 +32,9 @@ class AppViewModel {
     // MARK: - Logs
     var logs: [LogEntry] = []
 
+    // MARK: - Settings
+    var isShowingSettings: Bool = false
+
     // MARK: - Private
     private var audioPlayer: AVAudioPlayer?
     private var timer: Timer?

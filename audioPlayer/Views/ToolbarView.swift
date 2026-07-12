@@ -38,10 +38,17 @@ struct ToolbarView: View {
 
             Divider().frame(height: 20)
 
-            Button(action: {}) {
+            Button(action: { viewModel.isShowingSettings = true }) {
                 Image(systemName: "gearshape")
             }
             .help("设置")
+            .popover(isPresented: Binding(
+                get: { viewModel.isShowingSettings },
+                set: { viewModel.isShowingSettings = $0 }
+            )) {
+                SettingsView()
+                    .environment(viewModel)
+            }
 
             Spacer()
 
