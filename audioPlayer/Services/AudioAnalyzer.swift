@@ -89,8 +89,17 @@ class AudioAnalyzer {
     private func detectSegments(samples: [Float], duration: TimeInterval, targetCount: Int, sensitivity: Float) -> [AudioSegment] {
         guard !samples.isEmpty, duration > 0 else { return [] }
 
-        let mean = samples.reduce(0, +) / Float(samples.count)
-        let threshold = max(mean * sensitivity, 0.01)
+        // Compute the noise floor from the quietest 10% of samples.
+        // This gives a much more robust baseline than "mean of everything" when
+        // the audio is mostly silence with a few short loud bursts.
+        let sortedAsc = samples.sorted()
+        let noiseFloorCount = max(1, samples.count / 10)
+        let noiseFloor = sortedAsc.prefix(noiseFloorCount).reduce(0, +) / Float(noiseFloorCount)
+
+        // Threshold = noise floor × sensitivity factor.
+        // sensitivity = 1.0 → tight (only very loud); 5.0 → loose (include quieter regions).
+        // Guard against the noise floor being literally zero (silent file).
+        let threshold = max(noiseFloor * sensitivity, 0.0001)
 
         let sampleDuration = duration / Double(targetCount)
 

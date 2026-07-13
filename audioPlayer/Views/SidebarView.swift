@@ -5,25 +5,14 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button(action: { viewModel.openFolder() }) {
-                    Label("浏览文件夹", systemImage: "folder.badge.plus")
-                }
-                .buttonStyle(.plain)
-                .padding(6)
-
-                Spacer()
-            }
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
-
             TextField("过滤文件名...", text: Binding(
                 get: { viewModel.filterText },
                 set: { viewModel.filterText = $0 }
             ))
             .textFieldStyle(.roundedBorder)
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
 
             if viewModel.allFileItems.isEmpty {
                 VStack {
