@@ -2,14 +2,28 @@ import SwiftUI
 
 struct WaveformView: View {
     @Environment(AppViewModel.self) private var viewModel
+
     @State private var dragMode: DragMode = .none
     @State private var dragStartX: CGFloat = 0
+    @State private var dragCurrentX: CGFloat = 0
+    @State private var resizingSegmentId: UUID?
+    @State private var resizingEdge: ResizeEdge = .none
+    @State private var draggingSegmentId: UUID?
 
     private enum DragMode {
         case none
         case playhead
-        case seeking
+        case creating              // drag on empty area creates a new segment
+        case movingSegment         // drag inside a segment body moves it
+        case resizingLeftEdge
+        case resizingRightEdge
     }
+
+    private enum ResizeEdge {
+        case none, left, right
+    }
+
+    private let edgeHitWidth: CGFloat = 10
 
     var body: some View {
         GeometryReader { geometry in
@@ -26,13 +40,15 @@ struct WaveformView: View {
                 } else {
                     Canvas { context, size in
                         drawSegments(context: &context, width: width, height: height)
+                        drawCreatingPreview(context: &context, width: width, height: height)
                         drawWaveform(context: &context, width: width, midY: midY, ampScale: amplitudeScale)
                         drawPlayhead(context: &context, width: width, height: height)
                     }
+                    .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                handleDragChange(value: value, width: width, height: height)
+                                handleDragChange(value: value, width: width)
                             }
                             .onEnded { _ in
                                 handleDragEnd(width: width)
@@ -56,7 +72,7 @@ struct WaveformView: View {
         }
     }
 
-    // MARK: - Drawing (unchanged)
+    // MARK: - Drawing
 
     private func drawWaveform(context: inout GraphicsContext, width: CGFloat, midY: CGFloat, ampScale: CGFloat) {
         let samples = viewModel.waveformSamples
@@ -96,19 +112,16 @@ struct WaveformView: View {
         guard !viewModel.segments.isEmpty, viewModel.duration > 0 else { return }
 
         for segment in viewModel.segments {
-            let startRatio = segment.startTime / viewModel.duration
-            let endRatio = segment.endTime / viewModel.duration
+            let startX = timeToX(segment.startTime, width: width)
+            let endX = timeToX(segment.endTime, width: width)
             let rect = CGRect(
-                x: CGFloat(startRatio) * width,
+                x: startX,
                 y: 4,
-                width: max(CGFloat(endRatio - startRatio) * width, 3),
+                width: max(endX - startX, 3),
                 height: height - 8
             )
 
             let isSelected = viewModel.selectedSegments.contains(segment.id)
-
-            // Bold, obvious border in the brand red.
-            // Selected segments shift to accent color to signal state.
             let borderColor: Color = isSelected ? .accentColor : Color(red: 1.0, green: 0.30, blue: 0.30)
             let fillColor: Color = isSelected
                 ? Color.accentColor.opacity(0.18)
@@ -124,6 +137,21 @@ struct WaveformView: View {
         }
     }
 
+    /// Show a live preview while the user is dragging to create a new segment.
+    private func drawCreatingPreview(context: inout GraphicsContext, width: CGFloat, height: CGFloat) {
+        guard dragMode == .creating else { return }
+        let startX = min(dragStartX, dragCurrentX)
+        let endX = max(dragStartX, dragCurrentX)
+        let rect = CGRect(x: startX, y: 4, width: max(endX - startX, 3), height: height - 8)
+        let rounded = Path(roundedRect: rect, cornerRadius: 4)
+        context.fill(rounded, with: .color(Color.accentColor.opacity(0.20)))
+        context.stroke(
+            rounded,
+            with: .color(.accentColor),
+            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [6, 4])
+        )
+    }
+
     private func drawPlayhead(context: inout GraphicsContext, width: CGFloat, height: CGFloat) {
         let progress = viewModel.progress
         guard progress >= 0, progress <= 1.0 else { return }
@@ -132,37 +160,103 @@ struct WaveformView: View {
         context.fill(Path(rect), with: .color(.red.opacity(viewModel.isDraggingPlayhead ? 1.0 : 0.85)))
     }
 
-    // MARK: - Gesture Handling
+    // MARK: - Hit testing
 
-    private func playheadX(width: CGFloat) -> CGFloat {
-        CGFloat(viewModel.progress) * width
+    private func timeToX(_ time: TimeInterval, width: CGFloat) -> CGFloat {
+        guard viewModel.duration > 0 else { return 0 }
+        return CGFloat(time / viewModel.duration) * width
+    }
+
+    private func xToTime(_ x: CGFloat, width: CGFloat) -> TimeInterval {
+        guard viewModel.duration > 0 else { return 0 }
+        let ratio = max(0, min(1, x / width))
+        return ratio * viewModel.duration
+    }
+
+    private func segmentHit(at x: CGFloat, width: CGFloat) -> (segment: AudioSegment, edge: ResizeEdge) {
+        for segment in viewModel.segments {
+            let startX = timeToX(segment.startTime, width: width)
+            let endX = timeToX(segment.endTime, width: width)
+            if x >= startX && x <= endX {
+                let edge: ResizeEdge
+                if x < startX + edgeHitWidth { edge = .left }
+                else if x > endX - edgeHitWidth { edge = .right }
+                else { edge = .none }
+                return (segment, edge)
+            }
+        }
+        return (AudioSegment(startTime: 0, endTime: 0), .none)
     }
 
     private func isNearPlayhead(x: CGFloat, width: CGFloat) -> Bool {
-        abs(x - playheadX(width: width)) < 12
+        abs(x - CGFloat(viewModel.progress) * width) < 12
     }
 
-    private func handleDragChange(value: DragGesture.Value, width: CGFloat, height: CGFloat) {
+    // MARK: - Drag Handling
+
+    private func handleDragChange(value: DragGesture.Value, width: CGFloat) {
+        dragCurrentX = value.location.x
+
         switch dragMode {
         case .none:
             dragStartX = value.startLocation.x
             if isNearPlayhead(x: value.startLocation.x, width: width) {
                 dragMode = .playhead
                 viewModel.beginPlayheadDrag()
-            } else {
-                dragMode = .seeking
-            }
-            if dragMode == .playhead {
                 let progress = max(0, min(1, value.location.x / width))
                 viewModel.updatePlayheadDrag(to: progress)
+            } else {
+                let hit = segmentHit(at: value.startLocation.x, width: width)
+                if hit.segment.endTime > 0 {
+                    draggingSegmentId = hit.segment.id
+                    switch hit.edge {
+                    case .left:
+                        dragMode = .resizingLeftEdge
+                        resizingSegmentId = hit.segment.id
+                        resizingEdge = .left
+                    case .right:
+                        dragMode = .resizingRightEdge
+                        resizingSegmentId = hit.segment.id
+                        resizingEdge = .right
+                    case .none:
+                        dragMode = .movingSegment
+                    }
+                } else {
+                    dragMode = .creating
+                }
             }
 
         case .playhead:
             let progress = max(0, min(1, value.location.x / width))
             viewModel.updatePlayheadDrag(to: progress)
 
-        case .seeking:
+        case .creating:
+            // Live preview is drawn in drawCreatingPreview
             break
+
+        case .movingSegment:
+            guard let segId = draggingSegmentId,
+                  let seg = viewModel.segments.first(where: { $0.id == segId }) else { return }
+            let dx = value.location.x - value.startLocation.x
+            let dt = xToTime(dx, width: width)
+            let dur = viewModel.duration
+            let newStart = max(0, min(dur - (seg.endTime - seg.startTime), seg.startTime + dt))
+            let newEnd = newStart + (seg.endTime - seg.startTime)
+            viewModel.moveSegment(segId, to: AudioSegment(startTime: newStart, endTime: newEnd))
+
+        case .resizingLeftEdge:
+            guard let segId = resizingSegmentId,
+                  let seg = viewModel.segments.first(where: { $0.id == segId }) else { return }
+            let newStart = xToTime(value.location.x, width: width)
+            let clamped = min(newStart, seg.endTime - 0.2)
+            viewModel.moveSegment(segId, to: AudioSegment(startTime: max(0, clamped), endTime: seg.endTime))
+
+        case .resizingRightEdge:
+            guard let segId = resizingSegmentId,
+                  let seg = viewModel.segments.first(where: { $0.id == segId }) else { return }
+            let newEnd = xToTime(value.location.x, width: width)
+            let clamped = max(newEnd, seg.startTime + 0.2)
+            viewModel.moveSegment(segId, to: AudioSegment(startTime: seg.startTime, endTime: min(viewModel.duration, clamped)))
         }
     }
 
@@ -170,29 +264,36 @@ struct WaveformView: View {
         switch dragMode {
         case .playhead:
             viewModel.endPlayheadDrag()
-        case .seeking:
-            // Static tap (no movement) → process as click
-            handleTap(at: dragStartX, width: width)
+        case .creating:
+            // Create segment if drag was at least 8pt wide
+            let startX = min(dragStartX, dragCurrentX)
+            let endX = max(dragStartX, dragCurrentX)
+            if endX - startX >= 8 {
+                let startTime = xToTime(startX, width: width)
+                let endTime = xToTime(endX, width: width)
+                viewModel.createSegment(start: startTime, end: endTime)
+            }
+        case .movingSegment, .resizingLeftEdge, .resizingRightEdge:
+            break
         case .none:
             break
         }
         dragMode = .none
+        draggingSegmentId = nil
+        resizingSegmentId = nil
+        resizingEdge = .none
     }
 
-    // MARK: - Tap Handling
+    // MARK: - Tap-only fallback (called when click is inside an existing segment)
 
     private func handleTap(at x: CGFloat, width: CGFloat) {
         guard viewModel.duration > 0 else { return }
-        let ratio = x / width
-        let tappedTime = ratio * viewModel.duration
-
-        for segment in viewModel.segments {
-            if tappedTime >= segment.startTime && tappedTime <= segment.endTime {
-                viewModel.toggleSegmentSelection(segment)
-                return
-            }
+        let hit = segmentHit(at: x, width: width)
+        if hit.segment.endTime > 0 {
+            viewModel.toggleSegmentSelection(hit.segment)
+        } else {
+            viewModel.seek(to: max(0, min(1, x / width)))
         }
-        viewModel.seek(to: ratio)
     }
 
     // MARK: - Right-Click Context Menu

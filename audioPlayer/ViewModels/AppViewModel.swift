@@ -34,7 +34,7 @@ class AppViewModel {
 
     // MARK: - Settings
     var isShowingSettings: Bool = false
-    var segmentExpansionSeconds: Double = 5.0  // ±N seconds around each detected high-amplitude core
+    var segmentExpansionSeconds: Double = 1.25  // ±N seconds around each detected high-amplitude core
 
     // MARK: - Drag State
     var isDraggingPlayhead: Bool = false
@@ -239,6 +239,23 @@ class AppViewModel {
     }
 
     // MARK: - Segment Operations
+
+    /// User-created segment (from drag on empty area)
+    func createSegment(start: TimeInterval, end: TimeInterval) {
+        guard duration > 0 else { return }
+        let clampedStart = max(0, min(duration, start))
+        let clampedEnd = max(0, min(duration, end))
+        guard clampedEnd - clampedStart >= 0.2 else { return }
+        let new = AudioSegment(startTime: clampedStart, endTime: clampedEnd)
+        segments.append(new)
+        selectedSegments = [new.id]
+    }
+
+    /// Replace a segment's time range (used by drag-to-move / drag-to-resize)
+    func moveSegment(_ id: UUID, to newSegment: AudioSegment) {
+        guard let idx = segments.firstIndex(where: { $0.id == id }) else { return }
+        segments[idx] = AudioSegment(startTime: newSegment.startTime, endTime: newSegment.endTime)
+    }
 
     func toggleSegmentSelection(_ segment: AudioSegment) {
         if selectedSegments.contains(segment.id) {

@@ -57,7 +57,7 @@ struct SettingsView: View {
                             viewModel.reanalyzeSegments()
                         }
                     }
-                    Text("每个检测到的段落前后各扩展 N 秒，相邻的扩展框自动合并。")
+                    Text("默认 1.25s。框也支持在波形上拖动创建或拖动边缘调整范围。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
