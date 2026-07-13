@@ -453,9 +453,14 @@ class AppViewModel {
     // MARK: - Helpers
 
     private func formatTime(_ time: TimeInterval) -> String {
-        let min = Int(time) / 60
-        let sec = Int(time) % 60
-        return String(format: "%02d:%02d", min, sec)
+        let total = Int(time)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 
     private func formatTimeDisplay(_ time: TimeInterval) -> String {

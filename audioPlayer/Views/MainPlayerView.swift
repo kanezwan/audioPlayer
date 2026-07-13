@@ -77,7 +77,8 @@ struct MainPlayerView: View {
     // MARK: - Time ruler
 
     private var timeRulerLine: some View {
-        TimeRuler(duration: viewModel.duration)
+        let baseTime = viewModel.selectedFile.flatMap { viewModel.parseBaseTime(from: $0.name) }
+        return TimeRuler(duration: viewModel.duration, baseTime: baseTime)
             .frame(height: 16)
             .opacity(viewModel.duration > 0 ? 1 : 0)
     }
@@ -124,11 +125,12 @@ private struct ProgressSlider: View {
 
 private struct TimeRuler: View {
     let duration: TimeInterval
+    let baseTime: TimeInterval?
 
     var body: some View {
         Canvas { context, size in
             guard duration > 0 else { return }
-            let interval: TimeInterval = 10   // one tick every 10 s
+            let interval: TimeInterval = 10 * 60   // one tick every 10 minutes
             var t: TimeInterval = 0
             while t <= duration {
                 let ratio = t / duration
@@ -149,9 +151,13 @@ private struct TimeRuler: View {
         }
     }
 
+    /// Format seconds as HH:mm (absolute when baseTime is available, e.g. 21:00)
+    /// or mm:00 (relative fallback).
     private func formatTime(_ t: TimeInterval) -> String {
-        let m = Int(t) / 60
-        let s = Int(t) % 60
-        return String(format: "%d:%02d", m, s)
+        let total = (baseTime ?? 0) + t
+        let totalSec = Int(total)
+        let h = totalSec / 3600
+        let m = (totalSec % 3600) / 60
+        return String(format: "%02d:%02d", h, m)
     }
 }
