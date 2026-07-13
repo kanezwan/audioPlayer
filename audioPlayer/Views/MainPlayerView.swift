@@ -55,16 +55,17 @@ struct MainPlayerView: View {
 
             Spacer()
 
-            Text(viewModel.isDraggingPlayhead
-                ? viewModel.dragTimeDisplay
-                : viewModel.currentTimeDisplay
-            )
-            .font(.system(size: 60, weight: .thin, design: .monospaced))
-            .foregroundColor(.primary)
-            .fixedSize()
+            if viewModel.selectedFile != nil {
+                Text(viewModel.isDraggingPlayhead
+                    ? viewModel.dragTimeDisplay
+                    : viewModel.currentTimeDisplay
+                )
+                .font(.system(size: 60, weight: .thin, design: .monospaced))
+                .foregroundColor(.primary)
+                .fixedSize()
+            }
 
             Spacer()
-            Spacer().frame(width: 40) // balance the file name on the left
         }
     }
 
@@ -99,7 +100,7 @@ private struct TimeRulerView: View {
     var body: some View {
         Canvas { context, size in
             guard duration > 0 else { return }
-            let interval: TimeInterval = 10
+            let interval: TimeInterval = 10 * 60   // 10 minutes
             var t: TimeInterval = 0
             while t <= duration {
                 let ratio = t / duration
@@ -107,7 +108,7 @@ private struct TimeRulerView: View {
                 let tickPath = Path(CGRect(x: x - 0.5, y: 0, width: 1, height: 6))
                 context.fill(tickPath, with: .color(.secondary.opacity(0.5)))
 
-                let label = formatSeconds(t)
+                let label = formatMinutes(t)
                 let text = Text(label)
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.secondary)
@@ -121,10 +122,9 @@ private struct TimeRulerView: View {
         }
     }
 
-    private func formatSeconds(_ seconds: TimeInterval) -> String {
-        let m = Int(seconds) / 60
-        let s = Int(seconds) % 60
-        return String(format: "%02d:%02d", m, s)
+    private func formatMinutes(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        return "\(minutes)m"
     }
 }
 

@@ -143,7 +143,10 @@ struct WaveformView: View {
         let progress = viewModel.progress
         guard progress >= 0, progress <= 1.0 else { return }
         let x = CGFloat(progress) * width
-        let rect = CGRect(x: x - 1, y: 0, width: 2, height: height)
+        // Shortened to 50% of canvas height, vertically centered
+        let playheadHeight = height * 0.5
+        let yOffset = (height - playheadHeight) / 2
+        let rect = CGRect(x: x - 1, y: yOffset, width: 2, height: playheadHeight)
         context.fill(Path(rect), with: .color(.red.opacity(viewModel.isDraggingPlayhead ? 1.0 : 0.85)))
     }
 
