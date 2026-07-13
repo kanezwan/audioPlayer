@@ -17,11 +17,15 @@ class AudioExporter {
         return outDir
     }
 
-    func exportSegment(from sourceURL: URL, segment: AudioSegment) async throws -> URL {
+    func exportSegment(from sourceURL: URL, segment: AudioSegment, baseTime: TimeInterval?) async throws -> URL {
         let outDir = try ensureOutDir()
         let ext = sourceURL.pathExtension
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
-        let timecode = segment.timecodeString()
+        let timecode = absTimecodeString(
+            start: segment.startTime,
+            end: segment.endTime,
+            baseTime: baseTime
+        )
         let outputName = "\(baseName)_\(timecode).\(ext)"
         let outputURL = outDir.appendingPathComponent(outputName)
 
@@ -47,13 +51,40 @@ class AudioExporter {
         return outputURL
     }
 
-    func exportAllSegments(from sourceURL: URL, segments: [AudioSegment]) async throws -> [URL] {
+    func exportAllSegments(from sourceURL: URL, segments: [AudioSegment], baseTime: TimeInterval? = nil) async throws -> [URL] {
         var exported: [URL] = []
         for segment in segments {
-            let url = try await exportSegment(from: sourceURL, segment: segment)
+            let url = try await exportSegment(from: sourceURL, segment: segment, baseTime: baseTime)
             exported.append(url)
         }
         return exported
+    }
+
+    // MARK: - Timecode
+
+    /// Format as absolute HH:mm:ss-HH:mm:ss when baseTime is available,
+    /// otherwise fall back to relative mm:ss-mm:ss.
+    private func absTimecodeString(start: TimeInterval, end: TimeInterval, baseTime: TimeInterval?) -> String {
+        guard let base = baseTime else {
+            return timecodeRelative(start: start, end: end)
+        }
+        let absStart = base + start
+        let absEnd = base + end
+        return "\(formatHMS(absStart))-\(formatHMS(absEnd))"
+    }
+
+    private func timecodeRelative(start: TimeInterval, end: TimeInterval) -> String {
+        let sMin = Int(start) / 60, sSec = Int(start) % 60
+        let eMin = Int(end) / 60, eSec = Int(end) % 60
+        return String(format: "%02d:%02d-%02d:%02d", sMin, sSec, eMin, eSec)
+    }
+
+    private func formatHMS(_ interval: TimeInterval) -> String {
+        let totalSec = Int(interval)
+        let h = totalSec / 3600
+        let m = (totalSec % 3600) / 60
+        let s = totalSec % 60
+        return String(format: "%02d:%02d:%02d", h, m, s)
     }
 
     private func exportFileType(for ext: String) -> AVFileType {
@@ -77,3 +108,5 @@ enum ExporterError: LocalizedError {
         }
     }
 }
+
+

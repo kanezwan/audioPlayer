@@ -282,11 +282,12 @@ class AppViewModel {
         }
 
         let toExport = segments.filter { selectedSegments.contains($0.id) }
+        let baseTime = parseBaseTime(from: file.name)
 
         Task {
             addLog("开始导出 \(toExport.count) 个段落...", level: .info)
             do {
-                let urls = try await exporter.exportAllSegments(from: file.url, segments: toExport)
+                let urls = try await exporter.exportAllSegments(from: file.url, segments: toExport, baseTime: baseTime)
                 addLog("导出完成，共 \(urls.count) 个文件", level: .info)
                 if let outDir = try? exporter.ensureOutDir() {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: outDir.path)
@@ -305,10 +306,12 @@ class AppViewModel {
             return
         }
 
+        let baseTime = parseBaseTime(from: file.name)
+
         Task {
             addLog("开始导出全部 \(segments.count) 个段落...", level: .info)
             do {
-                let urls = try await exporter.exportAllSegments(from: file.url, segments: segments)
+                let urls = try await exporter.exportAllSegments(from: file.url, segments: segments, baseTime: baseTime)
                 addLog("导出完成，共 \(urls.count) 个文件", level: .info)
                 if let outDir = try? exporter.ensureOutDir() {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: outDir.path)
@@ -317,6 +320,26 @@ class AppViewModel {
                 addLog("导出失败: \(error.localizedDescription)", level: .error)
             }
         }
+    }
+
+    // MARK: - Filename Time Parsing
+
+    /// Extract a base time from a filename like `R20260713-200012.WAV`.
+    /// Returns nil if the filename doesn't match the expected pattern.
+    func parseBaseTime(from filename: String) -> TimeInterval? {
+        // Pattern: RYYYYMMDD-HHMMSS or similar prefix_date-time.extension
+        let name = (filename as NSString).deletingPathExtension
+        let parts = name.components(separatedBy: "-")
+        // Look for a 6-digit time part (HHMMSS)
+        for part in parts.reversed() {
+            if part.count == 6, let hour = Int(part.prefix(2)),
+               let min = Int(part.dropFirst(2).prefix(2)),
+               let sec = Int(part.dropFirst(4).prefix(2)),
+               (0...23).contains(hour), (0...59).contains(min), (0...59).contains(sec) {
+                return TimeInterval(hour * 3600 + min * 60 + sec)
+            }
+        }
+        return nil
     }
 
     // MARK: - Segment Expansion & Merge
