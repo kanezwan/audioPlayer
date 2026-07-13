@@ -4,12 +4,18 @@ struct PlaybackBar: View {
     @Environment(AppViewModel.self) private var viewModel
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
+            Button(action: { viewModel.skip(by: -3) }) {
+                Image(systemName: "gobackward.3")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewModel.isPlaying && !viewModel.isPaused)
+
             Button(action: { viewModel.togglePlayPause() }) {
-                Image(
-                    systemName: viewModel.isPlaying && !viewModel.isPaused
-                        ? "pause.fill"
-                        : "play.fill"
+                Image(systemName: viewModel.isPlaying && !viewModel.isPaused
+                    ? "pause.fill"
+                    : "play.fill"
                 )
                 .font(.title2)
             }
@@ -24,7 +30,14 @@ struct PlaybackBar: View {
             .buttonStyle(.plain)
             .disabled(!viewModel.isPlaying && !viewModel.isPaused)
 
-            Divider().frame(height: 20)
+            Button(action: { viewModel.skip(by: 3) }) {
+                Image(systemName: "goforward.3")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+            .disabled(!viewModel.isPlaying && !viewModel.isPaused)
+
+            Spacer()
 
             Image(systemName: viewModel.volume == 0
                 ? "speaker.slash.fill"
@@ -33,14 +46,13 @@ struct PlaybackBar: View {
                     : "speaker.wave.3.fill"
             )
             .foregroundColor(.secondary)
+            .font(.caption)
 
-            Slider(value: Binding(
-                get: { Double(viewModel.volume) },
-                set: { viewModel.setVolume(Float($0)) }
-            ), in: 0...1)
-            .frame(width: 100)
-
-            Spacer()
+            Slider(value: Binding(get: { Double(viewModel.volume) },
+                                   set: { viewModel.setVolume(Float($0)) }),
+                   in: 0...1)
+            .frame(width: 80)
+            .controlSize(.mini)
         }
     }
 }

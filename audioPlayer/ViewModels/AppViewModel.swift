@@ -247,6 +247,13 @@ class AppViewModel {
         audioPlayer?.volume = value
     }
 
+    func skip(by seconds: TimeInterval) {
+        guard let player = audioPlayer else { return }
+        let target = max(0, min(player.duration, player.currentTime + seconds))
+        player.currentTime = target
+        currentTime = target
+    }
+
     // MARK: - Segment Operations
 
     /// User-created segment (from drag on empty area)
