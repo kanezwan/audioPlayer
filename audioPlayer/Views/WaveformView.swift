@@ -45,8 +45,12 @@ struct WaveformView: View {
                         drawPlayhead(context: &context, width: width, height: height)
                     }
                     .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        // Static click — toggle selection or seek
+                        handleTap(at: location.x, width: width)
+                    }
                     .gesture(
-                        DragGesture(minimumDistance: 0)
+                        DragGesture(minimumDistance: 3)
                             .onChanged { value in
                                 handleDragChange(value: value, width: width)
                             }
@@ -111,28 +115,35 @@ struct WaveformView: View {
     private func drawSegments(context: inout GraphicsContext, width: CGFloat, height: CGFloat) {
         guard !viewModel.segments.isEmpty, viewModel.duration > 0 else { return }
 
+        // Render the box as a slim horizontal band: top and bottom thin lines
+        // at the peak amplitude (height × 0.42) plus a soft fill spanning the
+        // full height. Height is roughly 1/4 of the canvas.
+        let bandY = height * 0.5 - height * 0.10   // upper line at 40% from top
+        let bandH = height * 0.20                   // band height ~ 1/4 of canvas
+
         for segment in viewModel.segments {
             let startX = timeToX(segment.startTime, width: width)
             let endX = timeToX(segment.endTime, width: width)
             let rect = CGRect(
                 x: startX,
-                y: 4,
+                y: bandY,
                 width: max(endX - startX, 3),
-                height: height - 8
+                height: bandH
             )
 
             let isSelected = viewModel.selectedSegments.contains(segment.id)
-            let borderColor: Color = isSelected ? .accentColor : Color(red: 1.0, green: 0.30, blue: 0.30)
+            // Purple to avoid clashing with the red nav/playhead colors.
+            let borderColor: Color = isSelected ? .accentColor : Color(red: 0.49, green: 0.23, blue: 0.93)
             let fillColor: Color = isSelected
                 ? Color.accentColor.opacity(0.18)
-                : Color(red: 1.0, green: 0.30, blue: 0.30).opacity(0.10)
+                : Color(red: 0.49, green: 0.23, blue: 0.93).opacity(0.12)
 
-            let rounded = Path(roundedRect: rect, cornerRadius: 4)
+            let rounded = Path(roundedRect: rect, cornerRadius: 3)
             context.fill(rounded, with: .color(fillColor))
             context.stroke(
                 rounded,
                 with: .color(borderColor),
-                style: StrokeStyle(lineWidth: isSelected ? 3.0 : 2.5, lineCap: .round, lineJoin: .round)
+                style: StrokeStyle(lineWidth: isSelected ? 2.5 : 2.0, lineCap: .round, lineJoin: .round)
             )
         }
     }
@@ -142,13 +153,15 @@ struct WaveformView: View {
         guard dragMode == .creating else { return }
         let startX = min(dragStartX, dragCurrentX)
         let endX = max(dragStartX, dragCurrentX)
-        let rect = CGRect(x: startX, y: 4, width: max(endX - startX, 3), height: height - 8)
-        let rounded = Path(roundedRect: rect, cornerRadius: 4)
+        let bandY = height * 0.5 - height * 0.10
+        let bandH = height * 0.20
+        let rect = CGRect(x: startX, y: bandY, width: max(endX - startX, 3), height: bandH)
+        let rounded = Path(roundedRect: rect, cornerRadius: 3)
         context.fill(rounded, with: .color(Color.accentColor.opacity(0.20)))
         context.stroke(
             rounded,
             with: .color(.accentColor),
-            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [6, 4])
+            style: StrokeStyle(lineWidth: 2.0, lineCap: .round, dash: [6, 4])
         )
     }
 
@@ -288,10 +301,14 @@ struct WaveformView: View {
 
     private func handleTap(at x: CGFloat, width: CGFloat) {
         guard viewModel.duration > 0 else { return }
+        // Playhead region: drag, not click
+        if isNearPlayhead(x: x, width: width) { return }
         let hit = segmentHit(at: x, width: width)
-        if hit.segment.endTime > 0 {
+        if hit.segment.endTime > 0 && hit.edge == .none {
+            // Click inside a segment body — toggle selection
             viewModel.toggleSegmentSelection(hit.segment)
         } else {
+            // Empty area or segment edge — seek
             viewModel.seek(to: max(0, min(1, x / width)))
         }
     }
