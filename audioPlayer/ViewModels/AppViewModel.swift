@@ -126,11 +126,10 @@ class AppViewModel {
     // MARK: - Waveform Loading
 
     func loadWaveform(for item: AudioFileItem) {
-        guard item.url.startAccessingSecurityScopedResource() else {
+        guard FileManager.default.isReadableFile(atPath: item.url.path) else {
             addLog("无法访问文件: \(item.name)", level: .error)
             return
         }
-        defer { item.url.stopAccessingSecurityScopedResource() }
 
         isLoadingWaveform = true
         addLog("正在分析 \(item.name)...", level: .info)
@@ -171,7 +170,7 @@ class AppViewModel {
     // MARK: - Playback
 
     func play(item: AudioFileItem) {
-        guard item.url.startAccessingSecurityScopedResource() else {
+        guard FileManager.default.isReadableFile(atPath: item.url.path) else {
             addLog("无法播放: \(item.name)", level: .error)
             return
         }
