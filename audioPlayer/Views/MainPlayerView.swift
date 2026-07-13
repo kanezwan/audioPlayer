@@ -13,8 +13,8 @@ struct MainPlayerView: View {
             // ── Top bar ──
             topBar
                 .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
             // ── Waveform ──
             WaveformView()
@@ -49,8 +49,8 @@ struct MainPlayerView: View {
     // MARK: - Top bar
 
     private var topBar: some View {
-        ZStack {
-            // Left: file name
+        VStack(spacing: 4) {
+            // Row 1: file name
             HStack {
                 Text(viewModel.selectedFile?.name ?? "未选择文件")
                     .font(.body)
@@ -60,7 +60,7 @@ struct MainPlayerView: View {
                 Spacer()
             }
 
-            // Center: big current time
+            // Row 2: big current time — strictly centered
             if viewModel.selectedFile != nil {
                 Text(viewModel.isDraggingPlayhead
                     ? viewModel.dragTimeDisplay
@@ -69,6 +69,7 @@ struct MainPlayerView: View {
                 .font(.system(size: 60, weight: .thin, design: .monospaced))
                 .foregroundColor(.primary)
                 .fixedSize()
+                .frame(maxWidth: .infinity)
             }
         }
     }
