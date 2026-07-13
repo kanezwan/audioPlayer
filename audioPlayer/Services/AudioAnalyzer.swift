@@ -11,8 +11,19 @@ class AudioAnalyzer {
     func analyze(url: URL, targetWidth: Int = 1000, sensitivity: Float = 2.0) async throws -> AudioAnalysis {
         let (rawSamples, duration) = try await extractPCM(from: url)
         let downsampled = downsample(samples: rawSamples, targetCount: targetWidth)
+
+        // Detect segments on raw (un-normalized) amplitudes.
+        // Normalization would compress the dynamic range and make quiet regions
+        // appear artificially high, so detection runs on the original scale.
+        let segments = detectSegments(
+            rawSamples: downsampled,
+            duration: duration,
+            targetCount: targetWidth,
+            sensitivity: sensitivity
+        )
+
+        // Normalize AFTER detection — display only.
         let normalized = normalize(downsampled)
-        let segments = detectSegments(samples: normalized, duration: duration, targetCount: targetWidth, sensitivity: sensitivity)
         return AudioAnalysis(samples: normalized, segments: segments, duration: duration)
     }
 
@@ -86,29 +97,30 @@ class AudioAnalyzer {
 
     // MARK: - Segment Detection
 
-    private func detectSegments(samples: [Float], duration: TimeInterval, targetCount: Int, sensitivity: Float) -> [AudioSegment] {
-        guard !samples.isEmpty, duration > 0 else { return [] }
+    /// Detects high-amplitude regions on RAW (un-normalized) downsampled amplitudes.
+    ///
+    /// Threshold = global max amplitude ÷ sensitivity.
+    /// sensitivity = 1.0 → only the single loudest sample passes
+    /// sensitivity = 2.0 → amplitudes ≥ 50% of max pass (default, good for 2 clear peaks)
+    /// sensitivity = 5.0 → amplitudes ≥ 20% of max pass (more inclusive)
+    private func detectSegments(rawSamples: [Float], duration: TimeInterval, targetCount: Int, sensitivity: Float) -> [AudioSegment] {
+        guard !rawSamples.isEmpty, duration > 0 else { return [] }
 
-        // Compute the noise floor from the quietest 10% of samples.
-        // This gives a much more robust baseline than "mean of everything" when
-        // the audio is mostly silence with a few short loud bursts.
-        let sortedAsc = samples.sorted()
-        let noiseFloorCount = max(1, samples.count / 10)
-        let noiseFloor = sortedAsc.prefix(noiseFloorCount).reduce(0, +) / Float(noiseFloorCount)
+        guard let globalMax = rawSamples.max(), globalMax > 0 else { return [] }
 
-        // Threshold = noise floor × sensitivity factor.
-        // sensitivity = 1.0 → tight (only very loud); 5.0 → loose (include quieter regions).
-        // Guard against the noise floor being literally zero (silent file).
-        let threshold = max(noiseFloor * sensitivity, 0.0001)
+        // Threshold relative to the loudest sample in the file.
+        // On raw PCM, max is typically 0.3–0.8.  Background noise is ~0.001–0.01.
+        // threshold = 0.5 / 2.0 = 0.25  ⇒ only the true peaks survive.
+        let threshold = globalMax / sensitivity
 
         let sampleDuration = duration / Double(targetCount)
 
         var aboveThreshold: [(start: Int, end: Int)] = []
         var i = 0
-        while i < samples.count {
-            if samples[i] > threshold {
+        while i < rawSamples.count {
+            if rawSamples[i] > threshold {
                 let start = i
-                while i < samples.count && samples[i] > threshold {
+                while i < rawSamples.count && rawSamples[i] > threshold {
                     i += 1
                 }
                 aboveThreshold.append((start, i - 1))
@@ -117,8 +129,8 @@ class AudioAnalyzer {
             }
         }
 
-        // Merge regions closer than 0.5 seconds
-        let mergeSamples = Int(0.5 / sampleDuration)
+        // Merge regions within 1.5 seconds of each other
+        let mergeSamples = Int(1.5 / sampleDuration)
         var merged: [(start: Int, end: Int)] = []
         for region in aboveThreshold {
             if let last = merged.last, (region.start - last.end) <= mergeSamples {
@@ -128,8 +140,8 @@ class AudioAnalyzer {
             }
         }
 
-        // Filter out very short segments (< 0.3s)
-        let minSamples = Int(0.3 / sampleDuration)
+        // Filter out very short segments (< 0.5s on raw scale — they're usually clicks, not meaningful audio)
+        let minSamples = Int(0.5 / sampleDuration)
         return merged
             .filter { ($0.end - $0.start) >= minSamples }
             .map { AudioSegment(

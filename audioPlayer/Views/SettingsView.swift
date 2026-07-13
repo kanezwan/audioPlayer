@@ -36,7 +36,7 @@ struct SettingsView: View {
                             viewModel.reanalyzeSegments()
                         }
                     }
-                    Text("系数越大，检测到的段落越少。调整后会自动重新分析当前文件。")
+                    Text("系数越大 → 阈值越低 → 检测到的段落越多。")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
