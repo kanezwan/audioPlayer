@@ -16,71 +16,44 @@ struct WaveformView: View {
 
     private enum ResizeEdge { case none, left, right }
     private let edgeHitWidth: CGFloat = 10
-    private let rulerHeight: CGFloat = 18
 
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
-            let height = geometry.size.height - rulerHeight
+            let height = geometry.size.height
             let midY = height / 2
             let amplitudeScale = height * 0.42
 
-            VStack(spacing: 0) {
-                ZStack {
-                    Color(nsColor: .controlBackgroundColor)
+            ZStack {
+                Color(nsColor: .controlBackgroundColor)
 
-                    if viewModel.waveformSamples.isEmpty {
-                        emptyState.frame(height: height)
-                    } else {
-                        Canvas { context, size in
-                            drawSegments(context: &context, width: width, height: height)
-                            drawCreatingPreview(context: &context, width: width, height: height)
-                            drawWaveform(context: &context, width: width, midY: midY, ampScale: amplitudeScale)
-                            drawPlayhead(context: &context, width: width, height: height)
-                        }
-                        .frame(height: height)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 3)
-                                .onChanged { value in
-                                    handleDragChange(value: value, width: width)
-                                }
-                                .onEnded { _ in
-                                    handleDragEnd(width: width)
-                                }
-                        )
-                        .onTapGesture { location in
-                            handleStaticTap(at: location.x, width: width)
-                        }
-                        .contextMenu { segmentContextMenu(width: width) }
-                    }
-                }
-                .clipShape(Rectangle())
-
-                // Time ruler
-                if !viewModel.waveformSamples.isEmpty && viewModel.duration > 0 {
-                    timeRuler(width: width)
+                if viewModel.waveformSamples.isEmpty {
+                    emptyState
                 } else {
-                    Spacer().frame(height: rulerHeight)
+                    Canvas { context, size in
+                        drawSegments(context: &context, width: width, height: height)
+                        drawCreatingPreview(context: &context, width: width, height: height)
+                        drawWaveform(context: &context, width: width, midY: midY, ampScale: amplitudeScale)
+                        drawPlayhead(context: &context, width: width, height: height)
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 3)
+                            .onChanged { value in
+                                handleDragChange(value: value, width: width)
+                            }
+                            .onEnded { _ in
+                                handleDragEnd(width: width)
+                            }
+                    )
+                    .onTapGesture { location in
+                        handleStaticTap(at: location.x, width: width)
+                    }
+                    .contextMenu { segmentContextMenu(width: width) }
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-    }
-
-    // MARK: - Time Ruler
-
-    private func timeRuler(width: CGFloat) -> some View {
-        Canvas { context, size in
-            let colors = TimeRulerColors(primary: .secondary, secondary: .secondary.opacity(0.5))
-            DrawTimeRuler.draw(
-                context: &context,
-                width: width,
-                height: rulerHeight,
-                totalDuration: viewModel.duration,
-                colors: colors
-            )
-        }
-        .frame(height: rulerHeight)
     }
 
     private var emptyState: some View {
@@ -321,55 +294,4 @@ struct WaveformView: View {
     }
 }
 
-// MARK: - Time Ruler Rendering
 
-private struct TimeRulerColors {
-    let primary: Color
-    let secondary: Color
-}
-
-private enum DrawTimeRuler {
-    /// Draw a time ruler from 0..duration at the bottom of the waveform.
-    /// 1s interval marks, labeled every 5s.
-    static func draw(context: inout GraphicsContext, width: CGFloat, height: CGFloat,
-                     totalDuration: TimeInterval, colors: TimeRulerColors) {
-        guard totalDuration > 0 else { return }
-
-        // How many seconds to show a label
-        let labelInterval: TimeInterval = totalDuration >= 300 ? 30
-            : totalDuration >= 120 ? 15
-            : totalDuration >= 60 ? 10
-            : 5
-
-        let pixelsPerSecond = width / CGFloat(totalDuration)
-        var sec: TimeInterval = 0
-
-        while sec <= totalDuration {
-            let x = CGFloat(sec) * pixelsPerSecond
-            let isLabelTick = sec.truncatingRemainder(dividingBy: labelInterval) == 0
-
-            let tickHeight: CGFloat = isLabelTick ? 8 : 4
-            let tickTop: CGFloat = 2
-
-            let tickPath = Path(CGRect(x: x - 0.5, y: tickTop, width: 1, height: tickHeight))
-            context.fill(tickPath, with: .color(isLabelTick ? colors.primary : colors.secondary))
-
-            if isLabelTick {
-                let label = formatSeconds(sec)
-                let text = Text(label)
-                    .font(.system(size: 9, weight: .regular, design: .monospaced))
-                    .foregroundColor(colors.primary)
-                let resolved = context.resolve(text)
-                let textX = min(x + 2, width - resolved.measure(in: CGSize(width: 100, height: 20)).width)
-                context.draw(resolved, at: CGPoint(x: textX, y: tickTop + tickHeight + 1), anchor: .topLeading)
-            }
-            sec += 1
-        }
-    }
-
-    private static func formatSeconds(_ seconds: TimeInterval) -> String {
-        let min = Int(seconds) / 60
-        let sec = Int(seconds) % 60
-        return String(format: "%d:%02d", min, sec)
-    }
-}

@@ -39,6 +39,15 @@ class AppViewModel {
     // MARK: - Drag State
     var isDraggingPlayhead: Bool = false
     private var wasPlayingBeforeDrag: Bool = false
+    private var dragCurrentProgress: Double = 0
+
+    var currentTimeDisplay: String {
+        formatTimeDisplay(currentTime)
+    }
+
+    var dragTimeDisplay: String {
+        formatTimeDisplay(dragCurrentProgress * duration)
+    }
 
     // MARK: - Private
     private var audioPlayer: AVAudioPlayer?
@@ -388,6 +397,7 @@ class AppViewModel {
 
     func updatePlayheadDrag(to progress: Double) {
         let clamped = max(0, min(1, progress))
+        dragCurrentProgress = clamped
         guard let player = audioPlayer else { return }
         player.currentTime = clamped * player.duration
         currentTime = player.currentTime
@@ -439,5 +449,11 @@ class AppViewModel {
         let min = Int(time) / 60
         let sec = Int(time) % 60
         return String(format: "%02d:%02d", min, sec)
+    }
+
+    private func formatTimeDisplay(_ time: TimeInterval) -> String {
+        let min = Int(time) / 60
+        let sec = time - TimeInterval(min * 60)
+        return String(format: "%02d:%05.2f", min, sec)
     }
 }
