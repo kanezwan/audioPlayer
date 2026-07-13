@@ -61,6 +61,13 @@ class AppViewModel {
         return Array(filtered.prefix(displayedCount))
     }
 
+    var hasMore: Bool {
+        let filteredCount = allFileItems.filter {
+            filterText.isEmpty || $0.name.localizedCaseInsensitiveContains(filterText)
+        }.count
+        return displayedCount < filteredCount
+    }
+
     var progress: Double {
         guard duration > 0 else { return 0 }
         return currentTime / duration

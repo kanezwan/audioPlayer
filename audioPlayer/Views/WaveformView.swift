@@ -8,7 +8,7 @@ struct WaveformView: View {
             let width = geometry.size.width
             let height = geometry.size.height
             let midY = height / 2
-            let amplitudeScale = height * 0.4
+            let amplitudeScale = height * 0.42
 
             ZStack {
                 Color(nsColor: .controlBackgroundColor)
@@ -17,8 +17,9 @@ struct WaveformView: View {
                     emptyState
                 } else {
                     Canvas { context, size in
-                        drawWaveform(context: &context, width: width, midY: midY, ampScale: amplitudeScale)
+                        // Draw order matters: segments behind, then waveform, then playhead
                         drawSegments(context: &context, width: width, height: height)
+                        drawWaveform(context: &context, width: width, midY: midY, ampScale: amplitudeScale)
                         drawPlayhead(context: &context, width: width, height: height)
                     }
                     .gesture(
@@ -45,53 +46,91 @@ struct WaveformView: View {
 
     // MARK: - Drawing
 
+    /// Smooth waveform path, mirrored across the center line, with rounded stroke
+    /// for a polished look. Inspired by the Xiaomi recorder waveform aesthetic.
     private func drawWaveform(context: inout GraphicsContext, width: CGFloat, midY: CGFloat, ampScale: CGFloat) {
         let samples = viewModel.waveformSamples
         guard samples.count > 1 else { return }
 
-        var path = Path()
         let xStep = width / CGFloat(samples.count - 1)
 
-        path.move(to: CGPoint(x: 0, y: midY))
+        // Build top envelope
+        var topPath = Path()
+        topPath.move(to: CGPoint(x: 0, y: midY))
         for (i, sample) in samples.enumerated() {
             let x = CGFloat(i) * xStep
             let y = midY - CGFloat(sample) * ampScale
-            path.addLine(to: CGPoint(x: x, y: y))
+            topPath.addLine(to: CGPoint(x: x, y: y))
         }
+
+        // Build bottom envelope (mirrored, in reverse to close the shape)
+        var bottomPath = Path()
         for (i, sample) in samples.enumerated().reversed() {
             let x = CGFloat(i) * xStep
             let y = midY + CGFloat(sample) * ampScale
-            path.addLine(to: CGPoint(x: x, y: y))
+            bottomPath.addLine(to: CGPoint(x: x, y: y))
         }
-        path.closeSubpath()
+        bottomPath.addLine(to: CGPoint(x: width, y: midY))
 
-        context.fill(path, with: .color(Color.accentColor.opacity(0.3)))
-        context.stroke(path, with: .color(.accentColor), lineWidth: 0.5)
+        // Filled body with low opacity for a soft, painterly look
+        var fillPath = topPath
+        fillPath.addPath(bottomPath)
+        fillPath.closeSubpath()
+        context.fill(fillPath, with: .color(Color.accentColor.opacity(0.35)))
+
+        // Crisp stroke for the top envelope only
+        context.stroke(
+            topPath,
+            with: .color(.accentColor),
+            style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
+        )
     }
 
+    /// Soft horizontal highlight band for each detected segment.
+    /// No hard border — just a gentle color wash to indicate "audio activity here".
     private func drawSegments(context: inout GraphicsContext, width: CGFloat, height: CGFloat) {
-        let samples = viewModel.waveformSamples
-        guard !samples.isEmpty, !viewModel.segments.isEmpty, viewModel.duration > 0 else { return }
+        guard !viewModel.segments.isEmpty, viewModel.duration > 0 else { return }
 
         for segment in viewModel.segments {
             let startRatio = segment.startTime / viewModel.duration
             let endRatio = segment.endTime / viewModel.duration
             let rect = CGRect(
                 x: CGFloat(startRatio) * width,
-                y: 2,
-                width: max(CGFloat(endRatio - startRatio) * width, 2),
-                height: height - 4
+                y: 0,
+                width: max(CGFloat(endRatio - startRatio) * width, 3),
+                height: height
             )
 
             let isSelected = viewModel.selectedSegments.contains(segment.id)
-            context.fill(
-                Path(roundedRect: rect, cornerRadius: 3),
-                with: .color(isSelected ? Color.accentColor.opacity(0.35) : Color.orange.opacity(0.2))
+            // Soft background wash, stronger when selected
+            let color = isSelected
+                ? Color.accentColor.opacity(0.18)
+                : Color.orange.opacity(0.10)
+            context.fill(Path(rect), with: .color(color))
+
+            // Thin top and bottom accent line — the ONLY stroke we add.
+            // This keeps the visual clean even with 40+ segments.
+            let lineY1: CGFloat = 1
+            let lineY2: CGFloat = height - 1
+            var topLine = Path()
+            topLine.move(to: CGPoint(x: rect.minX, y: lineY1))
+            topLine.addLine(to: CGPoint(x: rect.maxX, y: lineY1))
+            var bottomLine = Path()
+            bottomLine.move(to: CGPoint(x: rect.minX, y: lineY2))
+            bottomLine.addLine(to: CGPoint(x: rect.maxX, y: lineY2))
+
+            let lineColor = isSelected
+                ? Color.accentColor.opacity(0.9)
+                : Color.orange.opacity(0.55)
+            context.stroke(
+                topLine,
+                with: .color(lineColor),
+                style: StrokeStyle(lineWidth: isSelected ? 2.5 : 1.5, lineCap: .round)
             )
             context.stroke(
-                Path(roundedRect: rect, cornerRadius: 3),
-                with: .color(isSelected ? Color.accentColor : Color.orange.opacity(0.6)),
-                lineWidth: isSelected ? 2 : 1
+                bottomLine,
+                with: .color(lineColor),
+                style: StrokeStyle(lineWidth: isSelected ? 2.5 : 1.5, lineCap: .round)
             )
         }
     }
@@ -101,7 +140,7 @@ struct WaveformView: View {
         guard progress >= 0, progress <= 1.0 else { return }
         let x = CGFloat(progress) * width
         let rect = CGRect(x: x - 1, y: 0, width: 2, height: height)
-        context.fill(Path(rect), with: .color(.red))
+        context.fill(Path(rect), with: .color(.red.opacity(0.85)))
     }
 
     // MARK: - Tap Handling

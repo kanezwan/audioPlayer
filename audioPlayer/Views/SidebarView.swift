@@ -25,43 +25,6 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
 
-            List(selection: Binding(
-                get: { viewModel.selectedFile?.id },
-                set: { _ in }
-            )) {
-                ForEach(viewModel.displayedFiles) { item in
-                    HStack {
-                        Image(systemName: audioIcon(for: item))
-                            .foregroundColor(viewModel.playingFile?.id == item.id ? .accentColor : .secondary)
-                        Text(item.name)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        viewModel.selectFile(item)
-                    }
-                    .onTapGesture(count: 2) {
-                        viewModel.doubleClickFile(item)
-                    }
-                    .contextMenu {
-                        Button("播放") { viewModel.doubleClickFile(item) }
-                    }
-                }
-
-                if viewModel.filteredFiles.count > viewModel.displayedFiles.count {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .onAppear {
-                                viewModel.loadNextPage()
-                            }
-                        Spacer()
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-
             if viewModel.allFileItems.isEmpty {
                 VStack {
                     Spacer()
@@ -70,9 +33,42 @@ struct SidebarView: View {
                         .font(.caption)
                     Spacer()
                 }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(viewModel.displayedFiles) { item in
+                            FileRow(
+                                item: item,
+                                isPlaying: viewModel.playingFile?.id == item.id,
+                                isSelected: viewModel.selectedFile?.id == item.id,
+                                audioIcon: audioIcon(for: item),
+                                onSingleClick: { viewModel.selectFile(item) },
+                                onDoubleClick: { viewModel.doubleClickFile(item) },
+                                onPlayContext: { viewModel.doubleClickFile(item) }
+                            )
+                            .onAppear {
+                                // Trigger pagination when the LAST visible row appears
+                                if item.id == viewModel.displayedFiles.last?.id {
+                                    viewModel.loadNextPage()
+                                }
+                            }
+                        }
+
+                        if viewModel.hasMore {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
+                            .onAppear { viewModel.loadNextPage() }
+                        }
+                    }
+                }
             }
         }
-        .frame(minWidth: 200, idealWidth: 250)
+        .frame(minWidth: 160, idealWidth: 240, maxWidth: 280)
     }
 
     private func audioIcon(for item: AudioFileItem) -> String {
@@ -82,6 +78,42 @@ struct SidebarView: View {
         case "mp3": return "music.note"
         case "aac": return "music.note.list"
         default: return "doc"
+        }
+    }
+}
+
+private struct FileRow: View {
+    let item: AudioFileItem
+    let isPlaying: Bool
+    let isSelected: Bool
+    let audioIcon: String
+    let onSingleClick: () -> Void
+    let onDoubleClick: () -> Void
+    let onPlayContext: () -> Void
+
+    var body: some View {
+        HStack {
+            Image(systemName: audioIcon)
+                .foregroundColor(isPlaying ? .accentColor : .secondary)
+                .frame(width: 18)
+            Text(item.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            isSelected
+                ? Color.accentColor.opacity(0.18)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: 4)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { onDoubleClick() }
+        .onTapGesture { onSingleClick() }
+        .contextMenu {
+            Button("播放") { onPlayContext() }
         }
     }
 }
