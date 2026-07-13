@@ -2,6 +2,14 @@ import SwiftUI
 
 struct WaveformView: View {
     @Environment(AppViewModel.self) private var viewModel
+    @State private var dragMode: DragMode = .none
+    @State private var dragStartX: CGFloat = 0
+
+    private enum DragMode {
+        case none
+        case playhead
+        case seeking
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -17,16 +25,20 @@ struct WaveformView: View {
                     emptyState
                 } else {
                     Canvas { context, size in
-                        // Draw order matters: segments behind, then waveform, then playhead
                         drawSegments(context: &context, width: width, height: height)
                         drawWaveform(context: &context, width: width, midY: midY, ampScale: amplitudeScale)
                         drawPlayhead(context: &context, width: width, height: height)
                     }
                     .gesture(
-                        SpatialTapGesture().onEnded { event in
-                            handleTap(at: event.location, width: width)
-                        }
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                handleDragChange(value: value, width: width, height: height)
+                            }
+                            .onEnded { _ in
+                                handleDragEnd(width: width)
+                            }
                     )
+                    .contextMenu { segmentContextMenu(width: width) }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -44,17 +56,14 @@ struct WaveformView: View {
         }
     }
 
-    // MARK: - Drawing
+    // MARK: - Drawing (unchanged)
 
-    /// Smooth waveform path, mirrored across the center line, with rounded stroke
-    /// for a polished look. Inspired by the Xiaomi recorder waveform aesthetic.
     private func drawWaveform(context: inout GraphicsContext, width: CGFloat, midY: CGFloat, ampScale: CGFloat) {
         let samples = viewModel.waveformSamples
         guard samples.count > 1 else { return }
 
         let xStep = width / CGFloat(samples.count - 1)
 
-        // Build top envelope
         var topPath = Path()
         topPath.move(to: CGPoint(x: 0, y: midY))
         for (i, sample) in samples.enumerated() {
@@ -63,7 +72,6 @@ struct WaveformView: View {
             topPath.addLine(to: CGPoint(x: x, y: y))
         }
 
-        // Build bottom envelope (mirrored, in reverse to close the shape)
         var bottomPath = Path()
         for (i, sample) in samples.enumerated().reversed() {
             let x = CGFloat(i) * xStep
@@ -72,13 +80,11 @@ struct WaveformView: View {
         }
         bottomPath.addLine(to: CGPoint(x: width, y: midY))
 
-        // Filled body with low opacity for a soft, painterly look
         var fillPath = topPath
         fillPath.addPath(bottomPath)
         fillPath.closeSubpath()
         context.fill(fillPath, with: .color(Color.accentColor.opacity(0.35)))
 
-        // Crisp stroke for the top envelope only
         context.stroke(
             topPath,
             with: .color(.accentColor),
@@ -86,8 +92,6 @@ struct WaveformView: View {
         )
     }
 
-    /// Soft horizontal highlight band for each detected segment.
-    /// No hard border — just a gentle color wash to indicate "audio activity here".
     private func drawSegments(context: inout GraphicsContext, width: CGFloat, height: CGFloat) {
         guard !viewModel.segments.isEmpty, viewModel.duration > 0 else { return }
 
@@ -102,14 +106,11 @@ struct WaveformView: View {
             )
 
             let isSelected = viewModel.selectedSegments.contains(segment.id)
-            // Soft background wash, stronger when selected
             let color = isSelected
                 ? Color.accentColor.opacity(0.18)
                 : Color.orange.opacity(0.10)
             context.fill(Path(rect), with: .color(color))
 
-            // Thin top and bottom accent line — the ONLY stroke we add.
-            // This keeps the visual clean even with 40+ segments.
             let lineY1: CGFloat = 1
             let lineY2: CGFloat = height - 1
             var topLine = Path()
@@ -140,16 +141,61 @@ struct WaveformView: View {
         guard progress >= 0, progress <= 1.0 else { return }
         let x = CGFloat(progress) * width
         let rect = CGRect(x: x - 1, y: 0, width: 2, height: height)
-        context.fill(Path(rect), with: .color(.red.opacity(0.85)))
+        context.fill(Path(rect), with: .color(.red.opacity(viewModel.isDraggingPlayhead ? 1.0 : 0.85)))
+    }
+
+    // MARK: - Gesture Handling
+
+    private func playheadX(width: CGFloat) -> CGFloat {
+        CGFloat(viewModel.progress) * width
+    }
+
+    private func isNearPlayhead(x: CGFloat, width: CGFloat) -> Bool {
+        abs(x - playheadX(width: width)) < 12
+    }
+
+    private func handleDragChange(value: DragGesture.Value, width: CGFloat, height: CGFloat) {
+        switch dragMode {
+        case .none:
+            dragStartX = value.startLocation.x
+            if isNearPlayhead(x: value.startLocation.x, width: width) {
+                dragMode = .playhead
+                viewModel.beginPlayheadDrag()
+            } else {
+                dragMode = .seeking
+            }
+            if dragMode == .playhead {
+                let progress = max(0, min(1, value.location.x / width))
+                viewModel.updatePlayheadDrag(to: progress)
+            }
+
+        case .playhead:
+            let progress = max(0, min(1, value.location.x / width))
+            viewModel.updatePlayheadDrag(to: progress)
+
+        case .seeking:
+            break
+        }
+    }
+
+    private func handleDragEnd(width: CGFloat) {
+        switch dragMode {
+        case .playhead:
+            viewModel.endPlayheadDrag()
+        case .seeking:
+            // Static tap (no movement) → process as click
+            handleTap(at: dragStartX, width: width)
+        case .none:
+            break
+        }
+        dragMode = .none
     }
 
     // MARK: - Tap Handling
 
-    private func handleTap(at location: CGPoint, width: CGFloat) {
-        let samples = viewModel.waveformSamples
-        guard !samples.isEmpty, viewModel.duration > 0 else { return }
-
-        let ratio = location.x / width
+    private func handleTap(at x: CGFloat, width: CGFloat) {
+        guard viewModel.duration > 0 else { return }
+        let ratio = x / width
         let tappedTime = ratio * viewModel.duration
 
         for segment in viewModel.segments {
@@ -158,7 +204,29 @@ struct WaveformView: View {
                 return
             }
         }
-
         viewModel.seek(to: ratio)
+    }
+
+    // MARK: - Right-Click Context Menu
+
+    @ViewBuilder
+    private func segmentContextMenu(width: CGFloat) -> some View {
+        if !viewModel.segments.isEmpty {
+            Button("全选段落") {
+                viewModel.selectAllSegments()
+            }
+            Button("取消选中") {
+                viewModel.clearSegmentSelection()
+            }
+            Divider()
+            if !viewModel.selectedSegments.isEmpty {
+                Button("导出选中 (\(viewModel.selectedSegments.count))") {
+                    viewModel.exportSelectedSegments()
+                }
+            }
+            Button("导出全部段落 (\(viewModel.segments.count))") {
+                viewModel.exportAllSegments()
+            }
+        }
     }
 }

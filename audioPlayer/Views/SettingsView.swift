@@ -39,6 +39,27 @@ struct SettingsView: View {
                     Text("系数越大，检测到的段落越少。调整后会自动重新分析当前文件。")
                         .font(.caption)
                         .foregroundColor(.secondary)
+
+                    Divider().padding(.vertical, 4)
+
+                    HStack {
+                        Text("段落扩展")
+                        Spacer()
+                        Text("±\(Int(viewModel.segmentExpansionSeconds))s")
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                            .frame(width: 50, alignment: .trailing)
+                    }
+                    Slider(value: $vm.segmentExpansionSeconds, in: 0...15, step: 1) {
+                        Text("段落扩展")
+                    } onEditingChanged: { editing in
+                        if !editing {
+                            viewModel.reanalyzeSegments()
+                        }
+                    }
+                    Text("每个检测到的段落前后各扩展 N 秒，相邻的扩展框自动合并。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 Section("导出") {
@@ -99,7 +120,7 @@ struct SettingsView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
-        .frame(width: 440, height: 460)
+        .frame(width: 440, height: 540)
     }
 }
 

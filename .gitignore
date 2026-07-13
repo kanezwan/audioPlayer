@@ -17,6 +17,3 @@ build/
 
 # Generated temp
 generated-images/
-
-# self
-.gitignore

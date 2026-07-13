@@ -24,7 +24,7 @@ class AppViewModel {
 
     // MARK: - Waveform & Segments
     var waveformSamples: [Float] = []
-    var segments: [AudioSegment] = []
+    var segments: [AudioSegment] = []       // expanded + merged segments shown on waveform
     var selectedSegments: Set<UUID> = []
     var sensitivityFactor: Float = 2.0
     var isLoadingWaveform: Bool = false
@@ -34,6 +34,11 @@ class AppViewModel {
 
     // MARK: - Settings
     var isShowingSettings: Bool = false
+    var segmentExpansionSeconds: Double = 5.0  // ±N seconds around each detected high-amplitude core
+
+    // MARK: - Drag State
+    var isDraggingPlayhead: Bool = false
+    private var wasPlayingBeforeDrag: Bool = false
 
     // MARK: - Private
     private var audioPlayer: AVAudioPlayer?
@@ -151,11 +156,14 @@ class AppViewModel {
                 )
                 await MainActor.run {
                     self.waveformSamples = analysis.samples
-                    self.segments = analysis.segments
                     self.duration = analysis.duration
+                    self.segments = self.expandAndMergeSegments(
+                        analysis.segments,
+                        duration: analysis.duration
+                    )
                     self.selectedSegments = []
                     self.isLoadingWaveform = false
-                    self.addLog("\(item.name) 检测到 \(analysis.segments.count) 个段落", level: .info)
+                    self.addLog("\(item.name) 检测到 \(self.segments.count) 个段落", level: .info)
                 }
             } catch {
                 await MainActor.run {
@@ -291,6 +299,66 @@ class AppViewModel {
             } catch {
                 addLog("导出失败: \(error.localizedDescription)", level: .error)
             }
+        }
+    }
+
+    // MARK: - Segment Expansion & Merge
+
+    /// Expand every raw segment by ±segmentExpansionSeconds, then merge
+    /// overlapping expanded segments into unified boxes.
+    /// Each visible box corresponds to one high-amplitude region.
+    private func expandAndMergeSegments(_ raw: [AudioSegment], duration: TimeInterval) -> [AudioSegment] {
+        guard !raw.isEmpty else { return [] }
+
+        let expansion = segmentExpansionSeconds
+
+        // Step 1 — expand
+        let expanded = raw.map { seg -> AudioSegment in
+            let newStart = max(0, seg.startTime - expansion)
+            let newEnd = min(duration, seg.endTime + expansion)
+            return AudioSegment(startTime: newStart, endTime: newEnd)
+        }.sorted { $0.startTime < $1.startTime }
+
+        // Step 2 — merge overlapping
+        var merged: [AudioSegment] = []
+        for seg in expanded {
+            if let last = merged.last, seg.startTime <= last.endTime {
+                merged[merged.count - 1] = AudioSegment(
+                    startTime: last.startTime,
+                    endTime: max(last.endTime, seg.endTime)
+                )
+            } else {
+                merged.append(seg)
+            }
+        }
+        return merged
+    }
+
+    // MARK: - Playhead Drag
+
+    func beginPlayheadDrag() {
+        wasPlayingBeforeDrag = isPlaying && !isPaused
+        if wasPlayingBeforeDrag {
+            audioPlayer?.pause()
+            isPaused = true
+            stopTimer()
+        }
+        isDraggingPlayhead = true
+    }
+
+    func updatePlayheadDrag(to progress: Double) {
+        let clamped = max(0, min(1, progress))
+        guard let player = audioPlayer else { return }
+        player.currentTime = clamped * player.duration
+        currentTime = player.currentTime
+    }
+
+    func endPlayheadDrag() {
+        isDraggingPlayhead = false
+        if wasPlayingBeforeDrag, let player = audioPlayer {
+            player.play()
+            isPaused = false
+            startTimer()
         }
     }
 
