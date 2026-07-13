@@ -100,38 +100,26 @@ struct WaveformView: View {
             let endRatio = segment.endTime / viewModel.duration
             let rect = CGRect(
                 x: CGFloat(startRatio) * width,
-                y: 0,
+                y: 4,
                 width: max(CGFloat(endRatio - startRatio) * width, 3),
-                height: height
+                height: height - 8
             )
 
             let isSelected = viewModel.selectedSegments.contains(segment.id)
-            let color = isSelected
+
+            // Bold, obvious border in the brand red.
+            // Selected segments shift to accent color to signal state.
+            let borderColor: Color = isSelected ? .accentColor : Color(red: 1.0, green: 0.30, blue: 0.30)
+            let fillColor: Color = isSelected
                 ? Color.accentColor.opacity(0.18)
-                : Color.orange.opacity(0.10)
-            context.fill(Path(rect), with: .color(color))
+                : Color(red: 1.0, green: 0.30, blue: 0.30).opacity(0.10)
 
-            let lineY1: CGFloat = 1
-            let lineY2: CGFloat = height - 1
-            var topLine = Path()
-            topLine.move(to: CGPoint(x: rect.minX, y: lineY1))
-            topLine.addLine(to: CGPoint(x: rect.maxX, y: lineY1))
-            var bottomLine = Path()
-            bottomLine.move(to: CGPoint(x: rect.minX, y: lineY2))
-            bottomLine.addLine(to: CGPoint(x: rect.maxX, y: lineY2))
-
-            let lineColor = isSelected
-                ? Color.accentColor.opacity(0.9)
-                : Color.orange.opacity(0.55)
+            let rounded = Path(roundedRect: rect, cornerRadius: 4)
+            context.fill(rounded, with: .color(fillColor))
             context.stroke(
-                topLine,
-                with: .color(lineColor),
-                style: StrokeStyle(lineWidth: isSelected ? 2.5 : 1.5, lineCap: .round)
-            )
-            context.stroke(
-                bottomLine,
-                with: .color(lineColor),
-                style: StrokeStyle(lineWidth: isSelected ? 2.5 : 1.5, lineCap: .round)
+                rounded,
+                with: .color(borderColor),
+                style: StrokeStyle(lineWidth: isSelected ? 3.0 : 2.5, lineCap: .round, lineJoin: .round)
             )
         }
     }
