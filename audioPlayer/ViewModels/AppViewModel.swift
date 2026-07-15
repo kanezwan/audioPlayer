@@ -170,7 +170,7 @@ class AppViewModel {
                         analysis.segments,
                         duration: analysis.duration
                     )
-                    self.selectedSegments = []
+                    self.selectedSegments = Set(self.segments.map { $0.id })
                     self.isLoadingWaveform = false
                     self.addLog("\(item.name) 检测到 \(self.segments.count) 个段落", level: .info)
                 }

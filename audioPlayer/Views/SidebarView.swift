@@ -66,6 +66,7 @@ struct SidebarView: View {
         case "wav": return "waveform"
         case "mp3": return "music.note"
         case "aac": return "music.note.list"
+        case "m4a": return "waveform.path"
         default: return "doc"
         }
     }

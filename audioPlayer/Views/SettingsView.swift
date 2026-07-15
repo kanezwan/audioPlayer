@@ -84,6 +84,7 @@ struct SettingsView: View {
                         Label("WAV", systemImage: "waveform")
                         Label("MP3", systemImage: "music.note")
                         Label("AAC", systemImage: "music.note.list")
+                        Label("M4A", systemImage: "waveform.path")
                     }
                     .foregroundColor(.secondary)
                     .font(.caption)

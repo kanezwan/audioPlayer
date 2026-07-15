@@ -1,7 +1,7 @@
 import Foundation
 
 struct FileScanner {
-    static let supportedExtensions = ["wav", "mp3", "aac"]
+    static let supportedExtensions = ["wav", "mp3", "aac", "m4a"]
 
     func scanFolder(at url: URL) throws -> [AudioFileItem] {
         let contents = try FileManager.default.contentsOfDirectory(

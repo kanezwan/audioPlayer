@@ -92,6 +92,7 @@ class AudioExporter {
         case "wav": return .wav
         case "mp3": return .mp3
         case "aac": return .m4a
+        case "m4a": return .m4a
         default: return .wav
         }
     }
