@@ -36,6 +36,7 @@ struct MainPlayerView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 10)
         }
+        .onDeleteCommand { viewModel.deleteSelectedSegments() }
         .overlay {
             if viewModel.isLoadingWaveform {
                 ProgressView("分析中...")
@@ -118,6 +119,7 @@ private struct ProgressSlider: View {
             EmptyView()
         }
         .controlSize(.mini)
+        .frame(height: 14)
     }
 }
 

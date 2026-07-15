@@ -62,29 +62,29 @@ class AudioExporter {
 
     // MARK: - Timecode
 
-    /// Format as absolute HH:mm:ss-HH:mm:ss when baseTime is available,
-    /// otherwise fall back to relative mm:ss-mm:ss.
+    /// Format as compact HHMMSS-HHMMSS when baseTime is available,
+    /// otherwise fall back to relative MMSS-MMSS.
     private func absTimecodeString(start: TimeInterval, end: TimeInterval, baseTime: TimeInterval?) -> String {
         guard let base = baseTime else {
             return timecodeRelative(start: start, end: end)
         }
         let absStart = base + start
         let absEnd = base + end
-        return "\(formatHMS(absStart))-\(formatHMS(absEnd))"
+        return "\(formatCompactTime(absStart))-\(formatCompactTime(absEnd))"
     }
 
     private func timecodeRelative(start: TimeInterval, end: TimeInterval) -> String {
         let sMin = Int(start) / 60, sSec = Int(start) % 60
         let eMin = Int(end) / 60, eSec = Int(end) % 60
-        return String(format: "%02d:%02d-%02d:%02d", sMin, sSec, eMin, eSec)
+        return String(format: "%02d%02d-%02d%02d", sMin, sSec, eMin, eSec)
     }
 
-    private func formatHMS(_ interval: TimeInterval) -> String {
+    private func formatCompactTime(_ interval: TimeInterval) -> String {
         let totalSec = Int(interval)
         let h = totalSec / 3600
         let m = (totalSec % 3600) / 60
         let s = totalSec % 60
-        return String(format: "%02d:%02d:%02d", h, m, s)
+        return String(format: "%02d%02d%02d", h, m, s)
     }
 
     private func exportFileType(for ext: String) -> AVFileType {

@@ -1,5 +1,105 @@
 import SwiftUI
 
+// MARK: - File-scope types shared between WaveformView and HoverTrackingNSView
+private enum ResizeEdge { case none, left, right }
+private typealias TimeToXFunc = (TimeInterval, CGFloat) -> CGFloat
+
+// MARK: - NSView wrapper for per-pixel mouse tracking & cursor changes
+
+private struct HoverTrackingView: NSViewRepresentable {
+    var width: CGFloat
+    let segments: [AudioSegment]
+    let selectedSegments: Set<UUID>
+    let duration: TimeInterval
+    let edgeHitWidth: CGFloat = 12
+    let timeToX: TimeToXFunc
+
+    func makeNSView(context: Context) -> NSView {
+        let view = HoverTrackingNSView()
+        view.wantsLayer = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? HoverTrackingNSView else { return }
+        view.segments = segments
+        view.selectedSegments = selectedSegments
+        view.duration = duration
+        view.viewWidth = width
+        view.edgeHitWidth = edgeHitWidth
+        view.timeToXClosure = timeToX
+    }
+}
+
+private class HoverTrackingNSView: NSView {
+    var segments: [AudioSegment] = []
+    var selectedSegments: Set<UUID> = []
+    var duration: TimeInterval = 0
+    var viewWidth: CGFloat = 0
+    var edgeHitWidth: CGFloat = 12
+    var timeToXClosure: TimeToXFunc?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+    }
+
+    private func segmentHit(at x: CGFloat) -> (segment: AudioSegment, edge: ResizeEdge) {
+        let w = max(viewWidth, 1)
+        for seg in segments {
+            guard let sx = timeToXClosure?(seg.startTime, w),
+                  let ex = timeToXClosure?(seg.endTime, w)
+            else { continue }
+            if x >= sx && x <= ex {
+                let e: ResizeEdge
+                if x < sx + edgeHitWidth { e = .left }
+                else if x > ex - edgeHitWidth { e = .right }
+                else { e = .none }
+                return (seg, e)
+            }
+        }
+        return (AudioSegment(startTime: 0, endTime: 0), .none)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let localPoint = convert(event.locationInWindow, from: nil)
+        let hit = segmentHit(at: localPoint.x)
+        switch hit.edge {
+        case .left:
+            NSCursor.resizeLeft.push()
+        case .right:
+            NSCursor.resizeRight.push()
+        default:
+            if hit.segment.endTime > 0 {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.arrow.push()
+            }
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.pop()
+    }
+}
+
+// MARK: - Main Waveform View
+
 struct WaveformView: View {
     @Environment(AppViewModel.self) private var viewModel
 
@@ -13,15 +113,18 @@ struct WaveformView: View {
     /// 播放指针颜色 — 橙红色，区别于蓝色波形和段落框
     private let playheadColor = Color(red: 1.0, green: 0.42, blue: 0.21)
 
-    /// 段落框配色 — 柔和的蓝紫色，参考竞品风格
-    private let segmentBorderColor = Color(red: 0.45, green: 0.55, blue: 0.85)
-    private let segmentFillColor = Color(red: 0.40, green: 0.50, blue: 0.80).opacity(0.12)
+    /// 段落框配色
+    private let segNormalBorder = Color(red: 0.55, green: 0.60, blue: 0.75)      // 普通：淡灰蓝边框
+    private let segNormalFill  = Color(red: 0.50, green: 0.55, blue: 0.70).opacity(0.08) // 普通：极淡填充
+    private let segSelectedBorder = Color(red: 0.35, green: 0.50, blue: 0.85)     // 选中：清晰蓝紫边框
+    private let segSelectedFill  = Color(red: 0.35, green: 0.48, blue: 0.78).opacity(0.16) // 选中：可见填充
 
     private enum DragMode {
         case none, playhead, creating, movingSegment, resizingLeftEdge, resizingRightEdge
     }
-    private enum ResizeEdge { case none, left, right }
     private let edgeHitWidth: CGFloat = 12
+    /// 内部判断拖动是否开始的阈值（替代 DragGesture.minimumDistance）
+    private let dragThreshold: CGFloat = 3
 
     var body: some View {
         GeometryReader { geometry in
@@ -44,13 +147,21 @@ struct WaveformView: View {
                     }
                     .contentShape(Rectangle())
                     .gesture(
-                        DragGesture(minimumDistance: 3)
+                        DragGesture(minimumDistance: 0)
                             .onChanged { value in handleDragChange(value: value, width: width) }
-                            .onEnded { _ in handleDragEnd(width: width) }
+                            .onEnded { value in handleDragEnd(value: value, width: width) }
                     )
-                    .onTapGesture { location in handleStaticTap(at: location.x, width: width) }
                     .contextMenu { segmentContextMenu() }
                 }
+                // NSView overlay for per-pixel cursor tracking
+                HoverTrackingView(
+                    width: width,
+                    segments: viewModel.segments,
+                    selectedSegments: viewModel.selectedSegments,
+                    duration: viewModel.duration,
+                    timeToX: timeToX
+                )
+                .allowsHitTesting(false)
             }
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
@@ -81,20 +192,22 @@ struct WaveformView: View {
                        style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round))
     }
 
-    // Segment overlay boxes — 仅绘制已选中的段落，柔和蓝紫配色
+    // Segment overlay boxes — 所有段落始终显示，区分选中/普通两种状态
     private func drawSegments(context: inout GraphicsContext, width: CGFloat, height: CGFloat) {
-        guard !viewModel.segments.isEmpty, !viewModel.selectedSegments.isEmpty, viewModel.duration > 0 else { return }
+        guard !viewModel.segments.isEmpty, viewModel.duration > 0 else { return }
         let bandY = height * 0.38
         let bandH = height * 0.24
-        for segment in viewModel.segments where viewModel.selectedSegments.contains(segment.id) {
+        for segment in viewModel.segments {
             let sx = timeToX(segment.startTime, width: width)
             let ex = timeToX(segment.endTime, width: width)
             let rect = CGRect(x: sx, y: bandY, width: max(ex - sx, 3), height: bandH)
-            // 柔和渐变填充 + 细边框
+            let isSel = viewModel.selectedSegments.contains(segment.id)
+            let border = isSel ? segSelectedBorder : segNormalBorder
+            let fill  = isSel ? segSelectedFill  : segNormalFill
             let rounded = Path(roundedRect: rect, cornerRadius: 4)
-            context.fill(rounded, with: .color(segmentFillColor))
-            context.stroke(rounded, with: .color(segmentBorderColor),
-                           style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+            context.fill(rounded, with: .color(fill))
+            context.stroke(rounded, with: .color(border),
+                           style: StrokeStyle(lineWidth: isSel ? 1.4 : 1.0, lineCap: .round, lineJoin: .round))
         }
     }
 
@@ -106,9 +219,9 @@ struct WaveformView: View {
         let bandH = height * 0.24
         let rect = CGRect(x: x1, y: bandY, width: max(x2 - x1, 3), height: bandH)
         let rounded = Path(roundedRect: rect, cornerRadius: 4)
-        context.fill(rounded, with: .color(segmentFillColor))
-        context.stroke(rounded, with: .color(segmentBorderColor),
-                       style: StrokeStyle(lineWidth: 1.2, dash: [6, 4]))
+        context.fill(rounded, with: .color(segSelectedFill))
+        context.stroke(rounded, with: .color(segSelectedBorder),
+                       style: StrokeStyle(lineWidth: 1.4, dash: [6, 4]))
     }
 
     // Blue solid line + circle endpoints (dot at top, dot at bottom) — 橙红色播放指针
@@ -138,9 +251,9 @@ struct WaveformView: View {
     private func xToTime(_ x: CGFloat, width: CGFloat) -> TimeInterval {
         max(0, min(1, x / width)) * viewModel.duration
     }
-    /// 仅在已选中的段落中进行命中测试（与 drawSegments 一致：只显示选中项）
+    /// 在所有段落中进行命中测试
     private func segmentHit(at x: CGFloat, width: CGFloat) -> (segment: AudioSegment, edge: ResizeEdge) {
-        for seg in viewModel.segments where viewModel.selectedSegments.contains(seg.id) {
+        for seg in viewModel.segments {
             let sx = timeToX(seg.startTime, width: width)
             let ex = timeToX(seg.endTime, width: width)
             if x >= sx && x <= ex {
@@ -173,9 +286,13 @@ struct WaveformView: View {
     // MARK: - Drag
 
     private func handleDragChange(value: DragGesture.Value, width: CGFloat) {
+        let dx = abs(value.location.x - value.startLocation.x)
         dragCurrentX = value.location.x
+
         switch dragMode {
         case .none:
+            // 只有移动超过 threshold 才开始真正拖动（否则视为 pending tap）
+            guard dx >= dragThreshold else { return }
             dragStartX = value.startLocation.x
             if isNearPlayhead(x: value.startLocation.x, width: width) {
                 dragMode = .playhead
@@ -213,9 +330,10 @@ struct WaveformView: View {
         }
     }
 
-    private func handleDragEnd(width: CGFloat) {
+    private func handleDragEnd(value: DragGesture.Value, width: CGFloat) {
         switch dragMode {
-        case .playhead: viewModel.endPlayheadDrag()
+        case .playhead:
+            viewModel.endPlayheadDrag()
         case .creating:
             let x1 = min(dragStartX, dragCurrentX)
             let x2 = max(dragStartX, dragCurrentX)
@@ -224,7 +342,11 @@ struct WaveformView: View {
                 viewModel.createSegment(start: xToTime(x1, width: width), end: xToTime(x2, width: width))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { creationLocked = false }
             }
-        default: break
+        case .none:
+            // 未进入拖动态 → 视为轻点（tap），处理段落选中或 seek
+            handleStaticTap(at: value.location.x, width: width)
+        default:
+            break
         }
         dragMode = .none; draggingSegmentId = nil; resizingSegmentId = nil
     }
@@ -233,10 +355,12 @@ struct WaveformView: View {
         if !viewModel.segments.isEmpty {
             Button("全选段落") { viewModel.selectAllSegments() }
             Button("取消选中") { viewModel.clearSegmentSelection() }
-            Divider()
             if !viewModel.selectedSegments.isEmpty {
+                Button("删除选中", role: .destructive) { viewModel.deleteSelectedSegments() }
+                Divider()
                 Button("导出选中 (\(viewModel.selectedSegments.count))") { viewModel.exportSelectedSegments() }
             }
+            Divider()
             Button("导出全部段落 (\(viewModel.segments.count))") { viewModel.exportAllSegments() }
         }
     }

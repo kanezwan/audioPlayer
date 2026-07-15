@@ -73,7 +73,7 @@ struct SettingsView: View {
                     HStack {
                         Text("命名格式")
                         Spacer()
-                        Text("原名称_mm:ss-mm:ss.后缀")
+                        Text("原名称_HHMMSS-HHMMSS.后缀")
                             .foregroundColor(.secondary)
                             .font(.caption.monospacedDigit())
                     }

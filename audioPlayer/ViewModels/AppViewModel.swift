@@ -155,32 +155,38 @@ class AppViewModel {
         isLoadingWaveform = true
         addLog("正在分析 \(item.name)...", level: .info)
 
+        let analyzer = self.analyzer
+        let sensitivity = sensitivityFactor
+        let itemName = item.name
+        let fileUrl = item.url
+
         Task.detached { [weak self] in
-            guard let self = self else { return }
             do {
-                let analysis = try await self.analyzer.analyze(
-                    url: item.url,
+                let analysis = try await analyzer.analyze(
+                    url: fileUrl,
                     targetWidth: 1000,
-                    sensitivity: await self.sensitivityFactor
+                    sensitivity: sensitivity
                 )
                 await MainActor.run {
+                    guard let self = self else { return }
                     self.waveformSamples = analysis.samples
                     self.duration = analysis.duration
                     self.segments = self.expandAndMergeSegments(
                         analysis.segments,
                         duration: analysis.duration
                     )
-                    self.selectedSegments = Set(self.segments.map { $0.id })
+                    self.selectedSegments = []
                     self.isLoadingWaveform = false
-                    self.addLog("\(item.name) 检测到 \(self.segments.count) 个段落", level: .info)
+                    self.addLog("\(itemName) 检测到 \(self.segments.count) 个段落", level: .info)
                 }
             } catch {
                 await MainActor.run {
+                    guard let self = self else { return }
                     self.waveformSamples = []
                     self.segments = []
                     self.duration = 0
                     self.isLoadingWaveform = false
-                    self.addLog("\(item.name) 分析失败: \(error.localizedDescription)", level: .error)
+                    self.addLog("\(itemName) 分析失败: \(error.localizedDescription)", level: .error)
                 }
             }
         }
@@ -287,6 +293,15 @@ class AppViewModel {
 
     func clearSegmentSelection() {
         selectedSegments = []
+    }
+
+    /// 删除当前选中的段落（按 Delete / Backspace 触发）
+    func deleteSelectedSegments() {
+        guard !selectedSegments.isEmpty else { return }
+        segments.removeAll { selectedSegments.contains($0.id) }
+        let count = selectedSegments.count
+        selectedSegments = []
+        addLog("已删除 \(count) 个段落", level: .info)
     }
 
     func exportSelectedSegments() {
