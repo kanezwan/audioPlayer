@@ -129,8 +129,10 @@ class AudioAnalyzer {
             }
         }
 
-        // Merge regions within 1.5 seconds of each other
-        let mergeSamples = Int(1.5 / sampleDuration)
+        // Merge regions within 10 seconds of each other — adjacent high-amplitude
+        // peaks get unified into a single wide box rather than spawning several
+        // short ones that look like vertical lines.
+        let mergeSamples = Int(10.0 / sampleDuration)
         var merged: [(start: Int, end: Int)] = []
         for region in aboveThreshold {
             if let last = merged.last, (region.start - last.end) <= mergeSamples {

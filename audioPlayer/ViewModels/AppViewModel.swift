@@ -34,7 +34,7 @@ class AppViewModel {
 
     // MARK: - Settings
     var isShowingSettings: Bool = false
-    var segmentExpansionSeconds: Double = 1.25  // ±N seconds around each detected high-amplitude core
+    var segmentExpansionSeconds: Double = 5.0  // ±N seconds around each detected high-amplitude core
 
     // MARK: - Drag State
     var isDraggingPlayhead: Bool = false
