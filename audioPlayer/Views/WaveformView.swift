@@ -149,7 +149,7 @@ struct WaveformView: View {
                     .onTapGesture { location in
                         handleStaticTap(at: location.x, width: width)
                     }
-                    .gesture(
+                    .highPriorityGesture(
                         DragGesture(minimumDistance: 3)
                             .onChanged { value in handleDragChange(value: value, width: width) }
                             .onEnded { value in handleDragEnd(value: value, width: width) }
@@ -279,9 +279,15 @@ struct WaveformView: View {
         guard viewModel.duration > 0 else { return }
         if isNearPlayhead(x: x, width: width) { return }
         let hit = segmentHit(at: x, width: width)
-        if hit.segment.endTime > 0 && hit.edge == .none {
-            viewModel.toggleSegmentSelection(hit.segment)
+        if hit.segment.endTime > 0 {
+            if hit.edge == .none {
+                // Click on segment body → toggle selection
+                viewModel.toggleSegmentSelection(hit.segment)
+            }
+            // Edge clicks do nothing on tap — DragGesture handles the
+            // resize drag when the user actually moves the mouse.
         } else {
+            // Empty area → seek
             viewModel.seek(to: max(0, min(1, x / width)))
         }
     }
