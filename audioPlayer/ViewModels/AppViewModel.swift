@@ -276,11 +276,14 @@ class AppViewModel {
     /// Replace a segment's time range (used by drag-to-move / drag-to-resize)
     func moveSegment(_ id: UUID, to newSegment: AudioSegment) {
         guard let idx = segments.firstIndex(where: { $0.id == id }) else { return }
-        // Mutate in place — preserve the original UUID so ongoing drag
-        // sessions can keep finding the same segment across multiple
-        // onChanged callbacks.
-        segments[idx].startTime = newSegment.startTime
-        segments[idx].endTime = newSegment.endTime
+        // Replace the entire array to ensure @Observable detects the change
+        // and SwiftUI re-renders the Canvas. Mutating an element in-place
+        // (segments[idx].startTime = ...) sometimes doesn't trigger
+        // observation tracking for Canvas closures.
+        var updated = segments
+        updated[idx].startTime = newSegment.startTime
+        updated[idx].endTime = newSegment.endTime
+        segments = updated
     }
 
     func toggleSegmentSelection(_ segment: AudioSegment) {

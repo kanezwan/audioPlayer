@@ -146,11 +146,8 @@ struct WaveformView: View {
                         drawPlayhead(context: &context, width: width, height: height)
                     }
                     .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        handleStaticTap(at: location.x, width: width)
-                    }
-                    .highPriorityGesture(
-                        DragGesture(minimumDistance: 3)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
                             .onChanged { value in handleDragChange(value: value, width: width) }
                             .onEnded { value in handleDragEnd(value: value, width: width) }
                     )
@@ -351,6 +348,9 @@ struct WaveformView: View {
                 viewModel.createSegment(start: xToTime(x1, width: width), end: xToTime(x2, width: width))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { creationLocked = false }
             }
+        case .none:
+            // No drag mode entered → treat as tap (click without movement)
+            handleStaticTap(at: value.startLocation.x, width: width)
         default:
             break
         }
