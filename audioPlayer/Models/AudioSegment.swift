@@ -1,9 +1,15 @@
 import Foundation
 
 struct AudioSegment: Identifiable, Hashable {
-    let id = UUID()
-    let startTime: TimeInterval
-    let endTime: TimeInterval
+    let id: UUID
+    var startTime: TimeInterval
+    var endTime: TimeInterval
+
+    init(id: UUID = UUID(), startTime: TimeInterval, endTime: TimeInterval) {
+        self.id = id
+        self.startTime = startTime
+        self.endTime = endTime
+    }
 
     var duration: TimeInterval { endTime - startTime }
 

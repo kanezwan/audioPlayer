@@ -276,7 +276,11 @@ class AppViewModel {
     /// Replace a segment's time range (used by drag-to-move / drag-to-resize)
     func moveSegment(_ id: UUID, to newSegment: AudioSegment) {
         guard let idx = segments.firstIndex(where: { $0.id == id }) else { return }
-        segments[idx] = AudioSegment(startTime: newSegment.startTime, endTime: newSegment.endTime)
+        // Mutate in place — preserve the original UUID so ongoing drag
+        // sessions can keep finding the same segment across multiple
+        // onChanged callbacks.
+        segments[idx].startTime = newSegment.startTime
+        segments[idx].endTime = newSegment.endTime
     }
 
     func toggleSegmentSelection(_ segment: AudioSegment) {
