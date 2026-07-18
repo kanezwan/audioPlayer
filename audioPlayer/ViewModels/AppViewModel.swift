@@ -35,6 +35,8 @@ class AppViewModel {
     // MARK: - Settings
     var isShowingSettings: Bool = false
     var segmentExpansionSeconds: Double = 5.0  // ±N seconds around each detected high-amplitude core
+    /// 两个段落间隔小于该秒数时，在分析阶段自动合并为一个大段落
+    var segmentMergeGapSeconds: Double = 300.0
 
     // MARK: - Drag State
     var isDraggingPlayhead: Bool = false
@@ -294,6 +296,24 @@ class AppViewModel {
         }
     }
 
+    /// 手动把选中的多个段落合并成一个（覆盖从最早开始到最晚结束的范围）
+    func mergeSelectedSegments() {
+        let chosen = segments.filter { selectedSegments.contains($0.id) }
+        guard chosen.count >= 2 else {
+            addLog("请至少选中 2 个段落再合并", level: .warning)
+            return
+        }
+        let start = chosen.map(\.startTime).min() ?? 0
+        let end = chosen.map(\.endTime).max() ?? 0
+        var updated = segments.filter { !selectedSegments.contains($0.id) }
+        let merged = AudioSegment(startTime: start, endTime: end)
+        updated.append(merged)
+        updated.sort { $0.startTime < $1.startTime }
+        segments = updated
+        selectedSegments = [merged.id]
+        addLog("已合并 \(chosen.count) 个段落 → \(merged.timecodeString())", level: .info)
+    }
+
     func selectAllSegments() {
         selectedSegments = Set(segments.map { $0.id })
     }
@@ -397,10 +417,13 @@ class AppViewModel {
             return AudioSegment(startTime: newStart, endTime: newEnd)
         }.sorted { $0.startTime < $1.startTime }
 
-        // Step 2 — merge overlapping
+        // Step 2 — merge overlapping *and* near-adjacent segments.
+        // Two boxes whose gap is under `segmentMergeGapSeconds` collapse into
+        // one big box (gap <= 0 means they already overlap).
+        let mergeGap = segmentMergeGapSeconds
         var merged: [AudioSegment] = []
         for seg in expanded {
-            if let last = merged.last, seg.startTime <= last.endTime {
+            if let last = merged.last, seg.startTime - last.endTime <= mergeGap {
                 merged[merged.count - 1] = AudioSegment(
                     startTime: last.startTime,
                     endTime: max(last.endTime, seg.endTime)

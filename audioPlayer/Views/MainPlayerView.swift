@@ -8,6 +8,14 @@ import SwiftUI
 struct MainPlayerView: View {
     @Environment(AppViewModel.self) private var viewModel
 
+    /// 大时间的配色 —— 石板蓝灰，和蓝色波形同一色系但更沉，长时间看不刺眼；
+    /// 深色模式下自动换成提亮的版本。
+    private static let timeDisplayColor = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.70, green: 0.76, blue: 0.90, alpha: 1)
+            : NSColor(srgbRed: 0.24, green: 0.30, blue: 0.43, alpha: 1)
+    })
+
     var body: some View {
         VStack(spacing: 0) {
             // ── Top bar ──
@@ -67,8 +75,8 @@ struct MainPlayerView: View {
                     ? viewModel.dragTimeDisplay
                     : viewModel.currentTimeDisplay
                 )
-                .font(.system(size: 60, weight: .thin, design: .monospaced))
-                .foregroundColor(.primary)
+                .font(.system(size: 46, weight: .light, design: .monospaced))
+                .foregroundColor(Self.timeDisplayColor)
                 .fixedSize()
                 .frame(maxWidth: .infinity)
             }

@@ -60,6 +60,27 @@ struct SettingsView: View {
                     Text("默认 1.25s。框也支持在波形上拖动创建或拖动边缘调整范围。")
                         .font(.caption)
                         .foregroundColor(.secondary)
+
+                    Divider().padding(.vertical, 4)
+
+                    HStack {
+                        Text("合并间隔")
+                        Spacer()
+                        Text("\(Int(viewModel.segmentMergeGapSeconds / 60)) 分钟")
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                            .frame(width: 60, alignment: .trailing)
+                    }
+                    Slider(value: $vm.segmentMergeGapSeconds, in: 0...900, step: 60) {
+                        Text("合并间隔")
+                    } onEditingChanged: { editing in
+                        if !editing {
+                            viewModel.reanalyzeSegments()
+                        }
+                    }
+                    Text("相邻两个段落间隔小于该时长时自动合并成一个大段落，默认 5 分钟。仅在分析时生效；手动拖动出来的框不会被自动吸并，需要合并可右键「合并选中」。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 Section("导出") {

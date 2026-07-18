@@ -27,7 +27,7 @@ class AudioExporter {
             baseTime: baseTime
         )
         let outputName = "\(baseName)_\(timecode).\(ext)"
-        let outputURL = outDir.appendingPathComponent(outputName)
+        let outputURL = uniqueURL(in: outDir, name: outputName)
 
         let asset = AVAsset(url: sourceURL)
         let startCMTime = CMTime(seconds: segment.startTime, preferredTimescale: 44100)
@@ -60,10 +60,24 @@ class AudioExporter {
         return exported
     }
 
+    /// 文件名精确到分钟，同一分钟内的两个段落会重名 —— 冲突时追加 _2、_3…
+    private func uniqueURL(in dir: URL, name: String) -> URL {
+        let candidate = dir.appendingPathComponent(name)
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }
+        let ext = candidate.pathExtension
+        let stem = candidate.deletingPathExtension().lastPathComponent
+        var index = 2
+        while true {
+            let next = dir.appendingPathComponent("\(stem)_\(index).\(ext)")
+            if !FileManager.default.fileExists(atPath: next.path) { return next }
+            index += 1
+        }
+    }
+
     // MARK: - Timecode
 
-    /// Format as compact HHMMSS-HHMMSS when baseTime is available,
-    /// otherwise fall back to relative MMSS-MMSS.
+    /// Format as compact HHMM-HHMM when baseTime is available,
+    /// otherwise fall back to relative HHMM-HHMM offsets. Seconds are dropped.
     private func absTimecodeString(start: TimeInterval, end: TimeInterval, baseTime: TimeInterval?) -> String {
         guard let base = baseTime else {
             return timecodeRelative(start: start, end: end)
@@ -74,17 +88,13 @@ class AudioExporter {
     }
 
     private func timecodeRelative(start: TimeInterval, end: TimeInterval) -> String {
-        let sMin = Int(start) / 60, sSec = Int(start) % 60
-        let eMin = Int(end) / 60, eSec = Int(end) % 60
-        return String(format: "%02d%02d-%02d%02d", sMin, sSec, eMin, eSec)
+        "\(formatCompactTime(start))-\(formatCompactTime(end))"
     }
 
+    /// HHMM —— 不含秒
     private func formatCompactTime(_ interval: TimeInterval) -> String {
-        let totalSec = Int(interval)
-        let h = totalSec / 3600
-        let m = (totalSec % 3600) / 60
-        let s = totalSec % 60
-        return String(format: "%02d%02d%02d", h, m, s)
+        let totalMin = Int(interval) / 60
+        return String(format: "%02d%02d", totalMin / 60, totalMin % 60)
     }
 
     private func exportFileType(for ext: String) -> AVFileType {
